@@ -1,125 +1,141 @@
-from flask import Flask, request, jsonify, session
-from flask_session import Session
-from flask_bcrypt import Bcrypt
-from flask_cors import CORS
-from flask_pymongo import PyMongo
-from bson.objectid import ObjectId  # For handling MongoDB ObjectId
-import os
+# from flask import Flask, request, jsonify, session
+# from flask_session import Session
+# from flask_bcrypt import Bcrypt
+# from flask_cors import CORS
+# from flask_sqlalchemy import SQLAlchemy
+# import os
 
-# Load environment variables (make sure you have your .env file set up)
-from dotenv import load_dotenv
-load_dotenv()
+# # Load environment variables
+# from dotenv import load_dotenv
+# load_dotenv()
 
-# Flask app configuration
-class ApplicationConfig:
-    SECRET_KEY = os.environ.get("SECRET_KEY", "your-secret-key")
-    SESSION_TYPE = "mongodb"  # Store sessions in MongoDB
-    SESSION_PERMANENT = False
-    SESSION_USE_SIGNER = True
+# # Flask app configuration
+# class ApplicationConfig:
+#     SECRET_KEY = os.environ.get("SECRET_KEY")
+#     SQLALCHEMY_DATABASE_URI = 'sqlite:///users.db'  # Using SQLite database
+#     SQLALCHEMY_TRACK_MODIFICATIONS = False
+#     SESSION_PERMANENT = False
+#     SESSION_USE_SIGNER = True
 
-app = Flask(__name__)
-CORS(app, supports_credentials=True)
-bcrypt = Bcrypt(app)
+# app = Flask(__name__)
+# app.config.from_object(ApplicationConfig)
 
-# MongoDB configuration
-app.config["MONGO_URI"] = os.environ.get("MONGO_URI", "mongodb://localhost:27017/mydatabase")
-mongo = PyMongo(app)
+# CORS(app, supports_credentials=True)
+# bcrypt = Bcrypt(app)
 
-# Initialize sessions using MongoDB
-app.config.from_object(ApplicationConfig)
-Session(app)
+# # Initialize SQLAlchemy
+# db = SQLAlchemy(app)
 
-# User Registration
-@app.route("/register", methods=["POST"])
-def register_user():
-    username = request.json["username"]
-    first_name = request.json["first_name"]
-    last_name = request.json["last_name"]
-    email = request.json["email"]
-    password = request.json["password"]
+# # User model for SQLite
+# class User(db.Model):
+#     id = db.Column(db.Integer, primary_key=True)
+#     username = db.Column(db.String(28), unique=True, nullable=False)
+#     first_name = db.Column(db.String(28), nullable=False)
+#     last_name = db.Column(db.String(28), nullable=False)
+#     email = db.Column(db.String(50), unique=True, nullable=False)
+#     password = db.Column(db.String(128), nullable=False)
 
-    # Check if the user already exists
-    user_exists = mongo.db.users.find_one({"username": username})
-    if user_exists:
-        return jsonify({"error": "User already exists"}), 409
+#     def __repr__(self):
+#         return f"<User {self.username}>"
 
-    # Hash the password
-    hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
+# # Initialize database
+# with app.app_context():
+#     db.create_all()
 
-    # Create a new user document
-    new_user = {
-        "username": username,
-        "first_name": first_name,
-        "last_name": last_name,
-        "email": email,
-        "password": hashed_password
-    }
+# # User Registration
+# @app.route("/register", methods=["POST"])
+# def register_user():
+#     if request.content_type != "application/json":
+#         return jsonify({"error": "Content-Type must be application/json"}), 415
+    
+#     username = request.json["username"]
+#     first_name = request.json["first_name"]
+#     last_name = request.json["last_name"]
+#     email = request.json["email"]
+#     password = request.json["password"]
 
-    # Insert the new user into MongoDB
-    mongo.db.users.insert_one(new_user)
+#     # Check if the user already exists
+#     user_exists = User.query.filter_by(username=username).first()
+#     if user_exists:
+#         return jsonify({"error": "User already exists"}), 409
 
-    # Store the user ID in the session
-    session["user_id"] = str(new_user["_id"])
+#     # Hash the password
+#     hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
 
-    return jsonify({
-        "id": str(new_user["_id"]),
-        "username": new_user["username"],
-        "message": "User created successfully",
-    }), 201
+#     # Create a new user record
+#     new_user = User(
+#         username=username,
+#         first_name=first_name,
+#         last_name=last_name,
+#         email=email,
+#         password=hashed_password
+#     )
 
-# User Login
-@app.route("/login", methods=["POST"])
-def login_user():
-    email = request.json["email"]
-    password = request.json["password"]
+#     db.session.add(new_user)
+#     db.session.commit()
 
-    # Find the user by email in MongoDB
-    user_exists = mongo.db.users.find_one({"email": email})
-    if not user_exists:
-        return jsonify({"error": "Unauthorized"}), 401
+#     # Store the user ID in the session
+#     session["user_id"] = new_user.id
 
-    # Check if the password matches the hashed password
-    if not bcrypt.check_password_hash(user_exists["password"], password):
-        return jsonify({"error": "Unauthorized"}), 401
+#     return jsonify({
+#         "id": new_user.id,
+#         "username": new_user.username,
+#         "message": "User created successfully",
+#     }), 201
 
-    # Store the user ID in the session
-    session["user_id"] = str(user_exists["_id"])
+# # User Login
+# @app.route("/login", methods=["POST"])
+# def login_user():
+#     email = request.json["email"]
+#     password = request.json["password"]
 
-    return jsonify({
-        "id": str(user_exists["_id"]),
-        "email": user_exists["email"]
-    })
+#     # Find the user by email in SQLite
+#     user = User.query.filter_by(email=email).first()
+#     if not user:
+#         return jsonify({"error": "Unauthorized"}), 401
 
-# Logout User
-@app.route("/logout", methods=["POST"])
-def logout_user():
-    session.pop("user_id", None)
-    return jsonify({"message": "User logged out successfully"}), 200
+#     # Check if the password matches the hashed password
+#     if not bcrypt.check_password_hash(user.password, password):
+#         return jsonify({"error": "Unauthorized"}), 401
 
-# Get Current Logged-In User
-@app.route("/@me")
-def get_current_user():
-    user_id = session.get("user_id")
+#     # Store the user ID in the session
+#     session["user_id"] = user.id
 
-    if not user_id:
-        return jsonify({"error": "Unauthorized"}), 401
+#     return jsonify({
+#         "id": user.id,
+#         "email": user.email
+#     })
 
-    # Find the user by ID in MongoDB
-    user = mongo.db.users.find_one({"_id": ObjectId(user_id)})
+# # Logout User
+# @app.route("/logout", methods=["POST"])
+# def logout_user():
+#     session.pop("user_id", None)
+#     return jsonify({"message": "User logged out successfully"}), 200
 
-    return jsonify({
-        "id": str(user["_id"]),
-        "username": user["username"],
-        "email": user["email"],
-        "first_name": user["first_name"],
-        "last_name": user["last_name"]
-    })
+# # Get Current Logged-In User
+# @app.route("/@me")
+# def get_current_user():
+#     user_id = session.get("user_id")
 
-# Home Route
-@app.route("/")
-def home():
-    return "Welcome to My Flask Web Application!"
+#     if not user_id:
+#         return jsonify({"error": "Unauthorized"}), 401
 
-# Run the Flask app
-if __name__ == "__main__":
-    app.run(port=5555, debug=True)
+#     # Find the user by ID in SQLite
+#     user = User.query.get(user_id)
+
+#     return jsonify({
+#         "id": user.id,
+#         "username": user.username,
+#         "email": user.email,
+#         "first_name": user.first_name,
+#         "last_name": user.last_name
+#     })
+
+# # Home Route
+# @app.route("/")
+# def home():
+#     return "Welcome to My Flask Web Application!"
+
+# # Run the Flask app
+# if __name__ == "__main__":
+#     app.run(port=5555, debug=True)
